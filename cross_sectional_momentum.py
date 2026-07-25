@@ -33,7 +33,7 @@ THE SIGNALS
                    revert). Note: the horizon scan in diagnose() shows this
                    effect lives at ~1 week, not ~1 month, in this universe.
 
-THE STRETCH CONCEPT: INVERSE-VOLATILITY WEIGHTING (see `weights_from_scores`).
+POSITION SIZING: inverse-volatility weighting (see `weights_from_scores`).
 
 HOW TO RUN
 ----------
@@ -76,8 +76,7 @@ FIG_DIR = "figures"
 
 
 # ============================================================================
-# 1. DATA  (Curriculum: Data -> PriceData; More Pandas -> ReadingWritingFiles,
-#           TimeSeries, MissingValues, MultiIndexing)
+# 1. DATA -- fetch, cache, and clean the price panel
 # ============================================================================
 def get_sp500_tickers():
     """A fixed list of large, liquid names.
@@ -123,7 +122,7 @@ def daily_returns(prices):
 
 
 # ============================================================================
-# 2. SIGNALS  (Curriculum: Momentum -> Time Horizon; Reversal -> Overview)
+# 2. SIGNALS
 # ============================================================================
 def momentum_signal(prices, lookback=MOM_LOOKBACK, skip=MOM_SKIP):
     return prices.shift(skip) / prices.shift(lookback) - 1.0
@@ -146,7 +145,7 @@ def combined_signal(prices):
 
 
 # ============================================================================
-# 3. WEIGHTING -- inverse volatility  (Curriculum: Weighting Pt2 -> VolWeights)
+# 3. WEIGHTING -- inverse volatility
 # ============================================================================
 def weights_from_scores(scores, vol, mode="long_short"):
     """Turn stock scores into portfolio weights.
@@ -190,8 +189,7 @@ def weights_from_scores(scores, vol, mode="long_short"):
 
 
 # ============================================================================
-# 4. BACKTEST  (Curriculum: Backtesting -> BacktestIntro, BasicPortfolioMath,
-#               TS Backtesting; Execution -> Tcosts, Turnover)
+# 4. BACKTEST
 # ============================================================================
 def run_backtest(prices, scores, mode="long_short"):
     """Walk forward month by month. Signal at month t trades month t+1.
@@ -239,7 +237,6 @@ def run_backtest(prices, scores, mode="long_short"):
 def benchmark_return(prices):
     """Equal-weight portfolio of the SAME universe -- the 'do nothing clever'
     baseline. Comparing to this is how we separate SKILL from a rising market.
-    (Curriculum: Performance Evaluation -> BetaIntro / AlphaIntro.)
     """
     rets = daily_returns(prices)
     month_ends = [d for d in prices.resample(REBALANCE).last().index
@@ -256,8 +253,7 @@ def benchmark_return(prices):
 
 
 # ============================================================================
-# 5. PERFORMANCE  (Curriculum: Performance Evaluation -> Sharpe Ratios;
-#                  Pt2 -> Drawdowns; ComputingAlpha)
+# 5. PERFORMANCE
 # ============================================================================
 def sharpe_ratio(pnl):
     return float(pnl.mean() / pnl.std() * np.sqrt(12)) if pnl.std() > 0 else np.nan
@@ -311,7 +307,7 @@ def summarize(pnl, turnover, label, benchmark=None):
 
 
 # ============================================================================
-# 6. DIAGNOSIS  (Curriculum: Quant Research Pitfalls -> Overindexing on Modeling)
+# 6. DIAGNOSIS -- decompose the failed strategy to find the cause
 # ============================================================================
 def diagnose(prices):
     """Why did the long/short book fail? Decompose it. This is the part that
@@ -376,17 +372,14 @@ def main():
 
     bench = benchmark_return(prices)
 
-    # ---- (a) the original long/short strategy (it failed) ------------------
     ls = run_backtest(prices, combined_signal(prices), mode="long_short")
     print("\n### (a) ORIGINAL LONG/SHORT STRATEGY ###")
     ls_board = summarize(ls["pnl"], ls["turnover"], "long/short FULL")
     print(ls_board.to_string())
     print(f"\n=> Sharpe {ls_board['Sharpe']:+.2f}. It lost money. Now diagnose why.")
 
-    # ---- (b) diagnosis -----------------------------------------------------
     diagnose(prices)
 
-    # ---- (c) the diagnosis-driven fix: long-only, benchmarked --------------
     lo = run_backtest(prices, zscore_cross_section(momentum_signal(prices)),
                       mode="long_only")
     pnl = lo["pnl"]
@@ -411,7 +404,7 @@ def main():
     print(f"  * Out-of-sample Sharpe {sharpe_ratio(pnl.iloc[split:]):+.2f} vs in-sample "
           f"{sharpe_ratio(pnl.iloc[:split]):+.2f}: the tilt held up, it isn't overfit.")
 
-    board.to_csv("scoreboard.csv")
+    board.round(3).to_csv("scoreboard.csv")
     pnl.to_frame("monthly_net_return").to_csv("monthly_returns.csv")
     make_charts(ls["pnl"], pnl, bench, split)
     print(f"\nSaved scoreboard.csv, monthly_returns.csv, charts in {FIG_DIR}/. Done.")
@@ -431,7 +424,7 @@ def make_charts(ls_pnl, lo_pnl, bench, split):
     axes[0].plot(eq_ls.index, eq_ls.values, color="#c0392b", lw=1.5)
     axes[0].axhline(1.0, color="#999", lw=0.8, ls=":")
     axes[0].set_ylabel("growth of $1")
-    axes[0].set_title("(a) Original long/short strategy — it bled out "
+    axes[0].set_title("(a) Original long/short strategy - it bled out "
                       "(the short leg was the problem)")
 
     eq_lo = (1 + lo_pnl).cumprod()
@@ -443,7 +436,7 @@ def make_charts(ls_pnl, lo_pnl, bench, split):
     axes[1].axvline(lo_pnl.index[split], color="#c0392b", ls="--", lw=1.0,
                     label="train/test split")
     axes[1].set_ylabel("growth of $1")
-    axes[1].set_title("(b) Fix: long-only momentum vs benchmark — "
+    axes[1].set_title("(b) Fix: long-only momentum vs benchmark - "
                       "the gap between the lines is the alpha")
     axes[1].legend(loc="upper left")
 
